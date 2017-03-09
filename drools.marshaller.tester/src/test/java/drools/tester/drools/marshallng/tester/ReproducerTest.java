@@ -93,10 +93,9 @@ public class ReproducerTest {
 	}
 
 	/**
-	 * Extracts the marshaller from cache or creates a new one.
+	 * Extracts the marshaller - creates a new one.
 	 *
-	 * @param modelName
-	 *            - name based on what the rules are grouped. E.G UVRX
+	 * 
 	 * @return marshaller for the modelName
 	 */
 	private Marshaller getMarshaller() {
