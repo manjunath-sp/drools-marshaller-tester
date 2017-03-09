@@ -57,8 +57,6 @@ public class ReproducerTest {
 			+ "banking" + File.separator + "Example.drl";
 	private static final Logger LOGGER = LoggerFactory.getLogger(ReproducerTest.class);
 
-	@Before
-
 	@Test
 	public void test() throws InterruptedException, ExecutionException, TimeoutException {
 		KieSession kSession = createNewkieSession();
