@@ -16,10 +16,26 @@
 
 package org.drools.examples.banking
 
+import drools.marshaller.tester.Account;
+
+declare Account
+	@role(event)
+	@timestamp(timestamp)
+end
+
+
 rule "Rule 01"   
     when
-        $number : Number( ) from entry-point "EP"
+        $account : Account( number != null ) from entry-point "EP"
     then
-        System.out.println("Number found with value: " + $number.intValue() ); 
-        retract( $number );
+        System.out.println("Account inserted into working memory: " + $account ); 
+        insert( $account );
+end 
+
+rule "Rule 02"   
+    when
+        $account : Account( number != null ) over window:time( 5s )
+    then
+        System.out.println("Active account retracted: " + $account ); 
+        retract( $account );
 end 

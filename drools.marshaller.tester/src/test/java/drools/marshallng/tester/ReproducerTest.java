@@ -1,16 +1,10 @@
-package drools.tester.drools.marshallng.tester;
+package drools.marshallng.tester;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -19,9 +13,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import org.drools.core.ClockType;
+import org.drools.core.TimerJobFactoryType;
 import org.drools.core.time.SessionPseudoClock;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Test;
 import org.kie.api.KieBase;
 import org.kie.api.KieServices;
@@ -37,11 +31,16 @@ import org.kie.api.marshalling.Marshaller;
 import org.kie.api.marshalling.ObjectMarshallingStrategy;
 import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.KieSession;
+import org.kie.api.runtime.KieSessionConfiguration;
 import org.kie.api.runtime.conf.ClockTypeOption;
+import org.kie.api.runtime.conf.TimedRuleExecutionOption;
+import org.kie.api.runtime.conf.TimerJobFactoryOption;
 import org.kie.api.runtime.rule.EntryPoint;
 import org.kie.internal.marshalling.MarshallerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import drools.marshaller.tester.Account;
 
 public class ReproducerTest {
 
@@ -63,33 +62,21 @@ public class ReproducerTest {
 		EntryPoint stream = kSession.getEntryPoint("EP");
 		SessionPseudoClock clock = kSession.getSessionClock();
 
-		ExecutorService thread = Executors.newSingleThreadExecutor();
-		@SuppressWarnings("rawtypes")
-		final Future fireUntilHaltResult = thread.submit(new Runnable() {
-			@Override
-			public void run() {
-				kSession.fireUntilHalt();
-			}
-		});
-
 		try {
 
 			for (int i = 0; i < 1000; i++) {
-				Number number = i;
-				stream.insert(number);
+				Account account = new Account(i, clock.getCurrentTime());
+				stream.insert(account);
+				kSession.fireAllRules();
 				clock.advanceTime(2, TimeUnit.MILLISECONDS);
 				backupKieSession(kSession);
 			}
 
 		} finally {
 			kSession.halt();
-			// wait for the engine to finish and throw exception if any was
-			// thrown
-			// in engine's thread
-			fireUntilHaltResult.get(600, TimeUnit.SECONDS);
-			thread.shutdown();
+			kSession.dispose();
 		}
-
+		
 	}
 
 	/**
@@ -107,8 +94,7 @@ public class ReproducerTest {
 				KieBase kBase = kieContainer.getKieBase(K_BASE_NAME);
 
 				if (kBase != null) {
-					marshaller = MarshallerFactory.newMarshaller(kBase,
-							new ObjectMarshallingStrategy[] { MarshallerFactory.newSerializeMarshallingStrategy() });
+					marshaller = KieServices.Factory.get().getMarshallers().newMarshaller(kBase);
 				}
 			} catch (RuntimeException e) {
 				LOGGER.warn("There was an error trying to access the KieBase for modelName:", e);
@@ -173,8 +159,11 @@ public class ReproducerTest {
 		if (results.hasMessages(Message.Level.WARNING, Message.Level.ERROR)) {
 			Assert.fail("Rule file has errors:" + results.getMessages().toString());
 		}
-
-		KieSession kieSession = kieContainer.newKieSession(SESSION_NAME);
+		
+		// Configuration that respects time windows when running in passive mode
+	    KieSessionConfiguration ksconf = newKieSessionConfiguration();
+	      
+		KieSession kieSession = kieContainer.newKieSession(SESSION_NAME, ksconf);
 
 		// Use for debugging : When rule match created or deleted when RHS is
 		// actually fired
@@ -185,6 +174,19 @@ public class ReproducerTest {
 		LOGGER.info("Created new kieSession");
 		return kieSession;
 	}
+	
+	/**
+	   * KieSessionConfiguration used to create a new KieSession and to de-serialize the drools session
+	   * 
+	   * @return
+	   */
+	  private KieSessionConfiguration newKieSessionConfiguration() {
+	    KieSessionConfiguration ksconf = KieServices.Factory.get().newKieSessionConfiguration();
+	    ksconf.setOption(TimerJobFactoryOption.get(TimerJobFactoryType.TRACKABLE.getId()));
+	    ksconf.setOption(TimedRuleExecutionOption.YES);
+	    ksconf.setOption(ClockTypeOption.get(ClockType.PSEUDO_CLOCK.getId()));
+	    return ksconf;
+	  }
 
 	/**
 	 * Utility class providing methods for coping with timing issues, such as
