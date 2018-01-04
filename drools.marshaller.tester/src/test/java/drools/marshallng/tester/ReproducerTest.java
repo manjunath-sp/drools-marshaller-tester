@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URL;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -14,6 +15,7 @@ import java.util.concurrent.TimeoutException;
 
 import org.drools.core.ClockType;
 import org.drools.core.TimerJobFactoryType;
+import org.drools.core.spi.ConsequenceException;
 import org.drools.core.time.SessionPseudoClock;
 import org.junit.Assert;
 import org.junit.Test;
@@ -28,7 +30,6 @@ import org.kie.api.builder.model.KieModuleModel;
 import org.kie.api.builder.model.KieSessionModel;
 import org.kie.api.conf.EventProcessingOption;
 import org.kie.api.marshalling.Marshaller;
-import org.kie.api.marshalling.ObjectMarshallingStrategy;
 import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.KieSessionConfiguration;
@@ -36,7 +37,6 @@ import org.kie.api.runtime.conf.ClockTypeOption;
 import org.kie.api.runtime.conf.TimedRuleExecutionOption;
 import org.kie.api.runtime.conf.TimerJobFactoryOption;
 import org.kie.api.runtime.rule.EntryPoint;
-import org.kie.internal.marshalling.MarshallerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,19 +57,85 @@ public class ReproducerTest {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ReproducerTest.class);
 
 	@Test
-	public void test() throws InterruptedException, ExecutionException, TimeoutException {
+	public void testWithSerilization() throws InterruptedException, ExecutionException, TimeoutException {
 		KieSession kSession = createNewkieSession();
 		EntryPoint stream = kSession.getEntryPoint("EP");
 		SessionPseudoClock clock = kSession.getSessionClock();
-
+		ExecutorService threadPool = Executors.newCachedThreadPool();
 		try {
 
 			for (int i = 0; i < 1000; i++) {
 				Account account = new Account(i, clock.getCurrentTime());
 				stream.insert(account);
-				kSession.fireAllRules();
-				clock.advanceTime(2, TimeUnit.MILLISECONDS);
-				backupKieSession(kSession);
+				
+				Callable<Integer> callable = new Callable<Integer>() {
+			        @Override
+			        public Integer call() throws Exception {
+			          try {
+			            return kSession.fireAllRules();
+			          } catch (ConsequenceException e) {
+			            // Catch and log drools runtime exceptions
+			            LOGGER.error("Exception caught while executing rules", e);
+			          }
+			          return null;
+			        }
+			      };
+
+			      Future<Integer> future = threadPool.submit(callable);
+			      try {
+			        // Only back-up after fireAllRules has completed execution, else may throw runtime
+			        // exceptions
+			        if (future.get().intValue() >= 0) {
+			        	backupKieSession(kSession);
+			        }
+			      } catch (InterruptedException | ExecutionException e) {
+			        // Catch and log drools runtime exceptions
+			        LOGGER.error("Exception caught while executing rules and backing up rules", e);
+			      }
+			}
+
+		} finally {
+			kSession.halt();
+			kSession.dispose();
+		}
+	}
+	
+	
+	@Test
+	public void testWithNoSerilization() throws InterruptedException, ExecutionException, TimeoutException {
+		KieSession kSession = createNewkieSession();
+		EntryPoint stream = kSession.getEntryPoint("EP");
+		SessionPseudoClock clock = kSession.getSessionClock();
+		ExecutorService threadPool = Executors.newCachedThreadPool();
+		try {
+
+			for (int i = 0; i < 1000; i++) {
+				clock.advanceTime(1, TimeUnit.SECONDS);
+				Account account = new Account(i, clock.getCurrentTime());
+				stream.insert(account);
+				
+				Callable<Integer> callable = new Callable<Integer>() {
+			        @Override
+			        public Integer call() throws Exception {
+			          try {
+			            return kSession.fireAllRules();
+			          } catch (ConsequenceException e) {
+			            // Catch and log drools runtime exceptions
+			            LOGGER.error("Exception caught while executing rules", e);
+			          }
+			          return null;
+			        }
+			      };
+
+			      Future<Integer> future = threadPool.submit(callable);
+			      try {
+			        if (future.get().intValue() >= 0) {
+			        	System.out.println("No of rules executed:" + future.get().intValue());
+			        }
+			      } catch (InterruptedException | ExecutionException e) {
+			        // Catch and log drools runtime exceptions
+			        LOGGER.error("Exception caught while executing rules and backing up rules", e);
+			      }
 			}
 
 		} finally {
@@ -104,17 +170,15 @@ public class ReproducerTest {
 	}
 
 	/**
-	 * Backs up the kie session in Redis
+	 * Backs up the kie session
 	 *
 	 */
 	private void backupKieSession(KieSession kSession) {
 
 		try (ByteArrayOutputStream baos = new ByteArrayOutputStream();) {
 			getMarshaller().marshall(baos, kSession);
-
-			// Save the session to redis
-			// cacheStorageService.saveObject(K_SESSION + sessionKey,
-			// baos.toByteArray());
+			//Backup in redis
+			System.out.println("The serilaized session:" + baos.toByteArray().toString());
 
 		} catch (IOException e) {
 			LOGGER.error("An error occurred while trying to marshal the kie session", e);
@@ -165,12 +229,6 @@ public class ReproducerTest {
 	      
 		KieSession kieSession = kieContainer.newKieSession(SESSION_NAME, ksconf);
 
-		// Use for debugging : When rule match created or deleted when RHS is
-		// actually fired
-		// kieSession.addEventListener(new DebugAgendaEventListener());
-		// Use for debugging : Notified when fact is inserted, update or
-		// removed.
-		// kieSession.addEventListener(new DebugRuleRuntimeEventListener());
 		LOGGER.info("Created new kieSession");
 		return kieSession;
 	}
@@ -188,56 +246,4 @@ public class ReproducerTest {
 	    return ksconf;
 	  }
 
-	/**
-	 * Utility class providing methods for coping with timing issues, such as
-	 * {@link java.lang.Thread#sleep(long, int)} inaccuracy, on certain OS.
-	 * <p/>
-	 * Inspired by
-	 * http://stackoverflow.com/questions/824110/accurate-sleep-for-java-on-
-	 * windows and
-	 * http://andy-malakov.blogspot.cz/2010/06/alternative-to-threadsleep.html.
-	 */
-	public static class TimerUtils {
-
-		private static final long SLEEP_PRECISION = Long.valueOf(System.getProperty("TIMER_SLEEP_PRECISION", "50000"));
-
-		private static final long SPIN_YIELD_PRECISION = Long
-				.valueOf(System.getProperty("TIMER_YIELD_PRECISION", "30000"));
-
-		private TimerUtils() {
-		}
-
-		/**
-		 * Sleeps for specified amount of time in milliseconds.
-		 *
-		 * @param duration
-		 *            the amount of milliseconds to wait
-		 * @throws InterruptedException
-		 *             if the current thread gets interrupted
-		 */
-		public static void sleepMillis(final long duration) throws InterruptedException {
-			sleepNanos(TimeUnit.MILLISECONDS.toNanos(duration));
-		}
-
-		/**
-		 * Sleeps for specified amount of time in nanoseconds.
-		 *
-		 * @param nanoDuration
-		 *            the amount of nanoseconds to wait
-		 * @throws InterruptedException
-		 *             if the current thread gets interrupted
-		 */
-		public static void sleepNanos(final long nanoDuration) throws InterruptedException {
-			final long end = System.nanoTime() + nanoDuration;
-			long timeLeft = nanoDuration;
-			do {
-				if (timeLeft > SLEEP_PRECISION) {
-					Thread.sleep(1);
-				} else if (timeLeft > SPIN_YIELD_PRECISION) {
-					Thread.yield();
-				}
-				timeLeft = end - System.nanoTime();
-			} while (timeLeft > 0);
-		}
-	}
 }
