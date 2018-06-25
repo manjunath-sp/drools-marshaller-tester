@@ -17,8 +17,17 @@
 package org.drools.examples.banking
 
 import drools.marshaller.tester.Account;
+import drools.marshaller.tester.Timeout;
+import drools.marshaller.tester.result.ResultProcessor;
+
+global ResultProcessor resultProcessor;
 
 declare Account
+	@role(event)
+	@timestamp(timestamp)
+end
+
+declare Timeout
 	@role(event)
 	@timestamp(timestamp)
 end
@@ -30,12 +39,36 @@ rule "Rule 01"
     then
         System.out.println("Account inserted into working memory: " + $account ); 
         insert( $account );
+        
+        long currentTimeInMills = drools.getWorkingMemory().getSessionClock().getCurrentTime();
+        Timeout timeout = new Timeout($account.getNumber(), currentTimeInMills);
+        insert(timeout);
 end 
 
-rule "Rule 02"   
+rule "Rule 02"
+	enabled false
     when
-        $account : Account( number != null ) over window:time( 5s )
+        $account : Account( number != null )
     then
         System.out.println("Active account retracted: " + $account ); 
         retract( $account );
+end
+
+rule "Rule 03"   
+    when
+        $account : Account( number != null )
+        not Timeout(number == $account.getNumber(), this after[5s, 5s] $account )
+    then
+        System.out.println("Timeout rule triggered retracted: " + $account ); 
+        retract( $account );
+end
+
+rule "Rule 04"   
+    when
+        $account : Account( number == 100 )
+        $timeout : Timeout(number == $account.getNumber(), this after[0s, 5s] $account )
+    then
+        System.out.println("Account #100 add to be processed: " + $account );
+        
+        resultProcessor.processResults($account);
 end

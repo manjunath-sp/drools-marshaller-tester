@@ -3,71 +3,78 @@ package drools.marshaller.tester;
 import java.io.Serializable;
 
 public class Account implements Serializable {
-	/**
-	 * 
-	 */
-	private static final long serialVersionUID = 1L;
-	
-	private Integer number;
-	
-	private Long timestamp;
+  /**
+   * 
+   */
+  private static final long serialVersionUID = 1L;
 
-	public Account(Integer number, Long timestamp) {
-		super();
-		this.number = number;
-		this.timestamp = timestamp;
-	}
+  private Integer number;
 
-	public Integer getNumber() {
-		return number;
-	}
+  private Long timestamp;
 
-	public void setNumber(Integer number) {
-		this.number = number;
-	}
+  public Account(Integer number, Long timestamp) {
+    super();
+    this.number = number;
+    this.timestamp = timestamp;
+  }
 
-	public Long getTimestamp() {
-		return timestamp;
-	}
+  public Integer getNumber() {
+    return number;
+  }
 
-	public void setTimestamp(Long timestamp) {
-		this.timestamp = timestamp;
-	}
+  public void setNumber(Integer number) {
+    this.number = number;
+  }
 
-	@Override
-	public int hashCode() {
-		final int prime = 31;
-		int result = 1;
-		result = prime * result + ((number == null) ? 0 : number.hashCode());
-		result = prime * result + ((timestamp == null) ? 0 : timestamp.hashCode());
-		return result;
-	}
+  public Long getTimestamp() {
+    return timestamp;
+  }
 
-	@Override
-	public boolean equals(Object obj) {
-		if (this == obj)
-			return true;
-		if (obj == null)
-			return false;
-		if (getClass() != obj.getClass())
-			return false;
-		Account other = (Account) obj;
-		if (number == null) {
-			if (other.number != null)
-				return false;
-		} else if (!number.equals(other.number))
-			return false;
-		if (timestamp == null) {
-			if (other.timestamp != null)
-				return false;
-		} else if (!timestamp.equals(other.timestamp))
-			return false;
-		return true;
-	}
+  public void setTimestamp(Long timestamp) {
+    this.timestamp = timestamp;
+  }
 
-	@Override
-	public String toString() {
-		return "Account [number=" + number + ", timestamp=" + timestamp + "]";
-	}
-	
+  @Override
+  public int hashCode() {
+    final int prime = 31;
+    int result = 1;
+    result = prime * result + (number == null ? 0 : number.hashCode());
+    result = prime * result + (timestamp == null ? 0 : timestamp.hashCode());
+    return result;
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    if (this == obj) {
+      return true;
+    }
+    if (obj == null) {
+      return false;
+    }
+    if (getClass() != obj.getClass()) {
+      return false;
+    }
+    Account other = (Account) obj;
+    if (number == null) {
+      if (other.number != null) {
+        return false;
+      }
+    } else if (!number.equals(other.number)) {
+      return false;
+    }
+    if (timestamp == null) {
+      if (other.timestamp != null) {
+        return false;
+      }
+    } else if (!timestamp.equals(other.timestamp)) {
+      return false;
+    }
+    return true;
+  }
+
+  @Override
+  public String toString() {
+    return "Account [number=" + number + ", timestamp=" + timestamp + "]";
+  }
+
 }
